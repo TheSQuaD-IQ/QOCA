@@ -3,11 +3,10 @@
 from qutip import *
 from scipy.sparse import diags
 import numpy as np
-from qiskit.aqua.operators import (TPBGroupedWeightedPauliOperator, WeightedPauliOperator,
-                                   MatrixOperator, op_converter)
+from qiskit.aqua.operators import WeightedPauliOperator
 from qiskit.quantum_info import Pauli
 import hubbard as hb
-from useful_functions import *
+from support_functions import *
 from qiskit.aqua.components.initial_states import *
 from qiskit.compiler import transpile
 
@@ -276,8 +275,9 @@ def spin_on_site(i, Nsite):
 
 ######### Pauli Hamiltonian #########
 
-def V_weighted_Pauli(U, Nsite):
+def V_weighted_Pauli(U, N, M):
     
+    Nsite = N*M
     l = int(2*Nsite)
     Pauli_V   = []
     weights_V = [(U/4+0.j)]*Nsite
@@ -291,11 +291,12 @@ def V_weighted_Pauli(U, Nsite):
         Pstring = ''.join(Plist)
         Pauli_V.append(Pauli(label=Pstring))
     
-    
     return Pauli_V, weights_V
 
-def T_weighted_Pauli(t, hopping_couplings, Nsite):
+def T_weighted_Pauli(t, N, M, periodic=False):
     
+    hopping_couplings = NxM_nearest_coupling_list(N, M, periodic=periodic)
+    Nsite = N*M
     l = int(2*Nsite)
     Pauli_T   = []
     
@@ -338,15 +339,16 @@ def T_weighted_Pauli(t, hopping_couplings, Nsite):
     
     return Pauli_T, weights_T
 
-def FH_Paulis_Weights(t, U, Nsite, hopping_couplings):
+def FH_Paulis_Weights(t, U, mu, N, M, periodic=False):
     """
     Returns the weighted Pauli strings of the Fermi-Hubbard Hamiltonian.
     For now, works only at half-filling.
     """
+    Nsite = N*M
     Norb = 2*Nsite
 
-    Pauli_T, weights_T = T_weighted_Pauli(t, hopping_couplings, Nsite)
-    Pauli_V, weights_V = V_weighted_Pauli(U, Nsite)
+    Pauli_T, weights_T = T_weighted_Pauli(t, N, M, periodic=periodic)
+    Pauli_V, weights_V = V_weighted_Pauli(U, N, M)
     
     Pauli_I  = [Pauli(label='I'*Norb)]
     Weight_I = [(-Nsite + 0.j)]
@@ -364,358 +366,10 @@ def Fermi_Hubbard_Hamiltonian_Pauli(t, U, mu, N, M, periodic=False, **params):
 
     Was tested, gives the same Hamiltonian Matrix
     """
-    Nsite = int(N*M)
-    hopping_couplings = NxM_nearest_coupling_list(N, M, periodic=periodic)
 
-    Paulis, weights = FH_Paulis_Weights(t, U, Nsite, hopping_couplings)
+    Paulis, weights = FH_Paulis_Weights(t, U, mu, N, M, periodic)
     
     Pauli_op = WeightedPauliOperator.from_list(Paulis, weights=weights)
     
     return Pauli_op
 
-
-
-######### Initial state circuits #########
-
-def T_ground_state_noFFFT_aquaIS(t, N, M, periodic, U_=0, **params):
-    """
-    Returns the aqua initial state for the non-interacting FHM
-    Inefficient since it does not use the FFFT
-    Returns circuit for ekets_T[0], so be careful of degeneracies,
-    there might be a better ekets_T ?
-    """
-    mu = U_/2
-
-    Hamiltonian_params = {
-        
-        'H_generator':      hb.Fermi_Hubbard_Hamiltonian,
-        'H_to_Pauli_op':    hb.Fermi_Hubbard_Hamiltonian_Pauli,
-        't':                t,
-        'U':                U_,
-        'mu':               mu,
-        'N':                N,
-        'M':                M,
-        'periodic':         periodic
-    }
-
-    num_qubits = 2*N*M
-
-    H_T = qt2qk(hb.Fermi_Hubbard_Hamiltonian(**Hamiltonian_params))
-    evals_T, ekets_T = H_T.eigenstates()
-    GST = ekets_T[0]
-    IS1 = Custom(num_qubits, state_vector = GST.data.toarray())
-    IS1_circuit = IS1.construct_circuit()
-    tranpiled_circuit = transpile(IS1_circuit, optimization_level=3)
-    IS_Aqua = Custom(num_qubits, circuit=tranpiled_circuit)
-
-    return IS_Aqua
-
-
-
-def T_ground_state_circuit(num_sites):
-    
-    qr = QuantumRegister(num_sites)
-    Tgs_circ = QuantumCircuit(qr, name='T_gs')
-    
-    if int(num_sites)==2:
-        Tgs_circ.x([qr[0]])
-        Tgs_circ.append(F0_gate(), [qr[0],qr[1]])
-        return Tgs_circ.to_instruction()
-    
-    if int(num_sites)==4:
-        Tgs_circ.x([qr[0]]) # not necessary, I only keep it to have 2 excitations in the system
-        Tgs_circ.x([qr[3]]) # necessary, related to -np.cos(2.*np.pi*3/4.) = -1
-        Tgs_circ.append(FFFT4d(), [qr[i] for i in range(num_sites)])
-        return Tgs_circ.to_instruction()
-
-
-def T_ground_state_circuit_spins(num_qubits, transpile_circuit=True):
-    
-    Nsite = int(num_qubits/2.)
-
-    qr = QuantumRegister(num_qubits, name='q')
-    circ = QuantumCircuit(qr)
-    
-    circ.append(T_ground_state_circuit(Nsite), [qr[i] for i in range(Nsite)]) # spin ups
-    circ.append(T_ground_state_circuit(Nsite), [qr[i+Nsite] for i in range(Nsite)]) # spin downs
-
-    if transpile_circuit:
-        basis_gates = ['u1', 'u2', 'u3', 'cx']
-        transpiled_circ = transpile(circ, optimization_level=3, basis_gates=basis_gates)
-        return transpiled_circ.copy()
-    else:
-        return circ.copy()
-
-def Hn_circuit(num_qubits, transpile_circuit=True):
-    
-    Nsite = int(num_qubits/2.)
-
-    qr = QuantumRegister(num_qubits, name='q')
-    circ = QuantumCircuit(qr)
-    
-    for i in range(num_qubits):
-        circ.h([qr[i]])
-    
-    if transpile_circuit:
-        basis_gates = ['u1', 'u2', 'u3', 'cx']
-        transpiled_circ = transpile(circ, optimization_level=3, basis_gates=basis_gates)
-        return transpiled_circ.copy()
-    else:
-        return circ.copy()
-
-def Hn1_circuit(num_qubits, transpile_circuit=True):
-    
-    Nsite = int(num_qubits/2.)
-
-    qr = QuantumRegister(num_qubits, name='q')
-    circ = QuantumCircuit(qr)
-    
-    circ.h([qr[0]])
-    circ.h([qr[0+Nsite]])
-    
-    if transpile_circuit:
-        basis_gates = ['u1', 'u2', 'u3', 'cx']
-        transpiled_circ = transpile(circ, optimization_level=3, basis_gates=basis_gates)
-        return transpiled_circ.copy()
-    else:
-        return circ.copy()
-
-def Hn2_circuit(num_qubits, transpile_circuit=True):
-    
-    Nsite = int(num_qubits/2.)
-
-    qr = QuantumRegister(num_qubits, name='q')
-    circ = QuantumCircuit(qr)
-    
-    circ.h([qr[0]])
-    circ.h([qr[1]])
-    circ.h([qr[0+Nsite]])
-    circ.h([qr[1+Nsite]])
-    
-    if transpile_circuit:
-        basis_gates = ['u1', 'u2', 'u3', 'cx']
-        transpiled_circ = transpile(circ, optimization_level=3, basis_gates=basis_gates)
-        return transpiled_circ.copy()
-    else:
-        return circ.copy()
-
-def FT_Hn_circuit(num_qubits, transpile_circuit=True):
-    
-    Nsite = int(num_qubits/2.)
-
-    qr = QuantumRegister(num_qubits, name='q')
-    circ = QuantumCircuit(qr)
-    
-    for i in range(num_qubits):
-        circ.h([qr[i]])
-    
-    if Nsite==2:
-        circ.append(F0_gate(), [qr[0],qr[1]])
-        circ.append(F0_gate(), [qr[0+Nsite],qr[1+Nsite]])
-    if Nsite==4:
-        circ.append(FFFT4d(), [qr[i] for i in range(Nsite)])
-        circ.append(FFFT4d(), [qr[i+Nsite] for i in range(Nsite)])
-    else:
-        raise ValueError('FT_Hn_circuit is only defined for Nsite= 2 or 4')
-    
-    if transpile_circuit:
-        basis_gates = ['u1', 'u2', 'u3', 'cx']
-        transpiled_circ = transpile(circ, optimization_level=3, basis_gates=basis_gates)
-        return transpiled_circ.copy()
-    else:
-        return circ.copy()
-
-def U_ground_state_circuit_spins(num_qubits):
-
-    qr = QuantumRegister(num_qubits, name='q')
-    circ = QuantumCircuit(qr)
-
-    if num_qubits==4:
-        # conserves the spin
-        circ.x([qr[1]])
-        circ.x([qr[2]])
-
-    if num_qubits==8:
-
-        # starts with more spins down
-        # circ.x([qr[3]])
-        # circ.x([qr[4]])
-        # circ.x([qr[5]])
-        # circ.x([qr[6]])
-
-        # conserves the spin
-        circ.x([qr[0]])
-        circ.x([qr[2]])
-        circ.x([qr[5]])
-        circ.x([qr[7]])
-
-        # for q in qr:
-        #     circ.h([q])
-
-        # circ.append(FFFT4d(), [qr[i] for i in range(4)])
-        # circ.append(FFFT4d(), [qr[i+4] for i in range(4)])
-
-    if num_qubits==12:
-        circ.x([qr[0]])
-        circ.x([qr[2]])
-        circ.x([qr[4]])
-        circ.x([qr[7]])
-        circ.x([qr[9]])
-        circ.x([qr[11]])
-
-    return circ.copy()
-
-
-def T_ground_state_circuit_2x2_0particles():
-    
-    qr = QuantumRegister(8)
-    Tgs_circ = QuantumCircuit(qr, name='T_gs')
-    
-    return Tgs_circ.copy()
-
-def T_ground_state_circuit_2x2_1particles(transpile_circuit=True):
-    
-    qr = QuantumRegister(8)
-    Tgs_circ = QuantumCircuit(qr, name='T_gs')
-    
-    
-    Tgs_circ.x([qr[0]])
-    Tgs_circ.append(FFFT4d(), [qr[i] for i in range(4)])
-
-    if transpile_circuit:
-        basis_gates = ['u1', 'u2', 'u3', 'cx']
-        transpiled_circ = transpile(Tgs_circ, optimization_level=3, basis_gates=basis_gates)
-        return transpiled_circ.copy()
-    else:
-        return Tgs_circ.copy()
-
-
-def T_ground_state_circuit_2x2_2particles(transpile_circuit=False):
-    
-    qr = QuantumRegister(8)
-    Tgs_circ = QuantumCircuit(qr, name='T_gs')
-    
-    
-    Tgs_circ.x([qr[0]]) # not necessary, I only keep it to have 2 excitations in the system
-    Tgs_circ.x([qr[4]]) # necessary, related to -np.cos(2.*np.pi*3/4.) = -1
-    Tgs_circ.append(FFFT4d(), [qr[i] for i in range(4)])
-    Tgs_circ.append(FFFT4d(), [qr[i+4] for i in range(4)])
-    
-    if transpile_circuit:
-        basis_gates = ['u1', 'u2', 'u3', 'cx']
-        transpiled_circ = transpile(Tgs_circ, optimization_level=3, basis_gates=basis_gates)
-        return transpiled_circ.copy()
-    else:
-        return Tgs_circ.copy()
-
-
-def T_ground_state_circuit_2x2_6particles(transpile_circuit=True):
-    
-    qr = QuantumRegister(8)
-    Tgs_circ = QuantumCircuit(qr, name='T_gs')
-    
-    
-    Tgs_circ.x([qr[0]]) 
-    Tgs_circ.x([qr[1]])
-    Tgs_circ.x([qr[3]])
-    Tgs_circ.x([qr[4]])
-    Tgs_circ.x([qr[5]])
-    Tgs_circ.x([qr[7]])
-    Tgs_circ.append(FFFT4d(), [qr[i] for i in range(4)])
-    Tgs_circ.append(FFFT4d(), [qr[i+4] for i in range(4)])
-    
-    if transpile_circuit:
-        basis_gates = ['u1', 'u2', 'u3', 'cx']
-        transpiled_circ = transpile(Tgs_circ, optimization_level=3, basis_gates=basis_gates)
-        return transpiled_circ.copy()
-    else:
-        return Tgs_circ.copy()
-
-
-def T_ground_state_circuit_2x2_7particles_1(transpile_circuit=True):
-    
-    qr = QuantumRegister(8)
-    Tgs_circ = QuantumCircuit(qr, name='T_gs')
-    
-    
-    Tgs_circ.x([qr[0]]) 
-    Tgs_circ.x([qr[1]])
-    Tgs_circ.x([qr[3]])
-    Tgs_circ.x([qr[4]])
-    Tgs_circ.x([qr[5]])
-    Tgs_circ.x([qr[6]])
-    Tgs_circ.x([qr[7]])
-    Tgs_circ.append(FFFT4d(), [qr[i] for i in range(4)])
-    Tgs_circ.append(FFFT4d(), [qr[i+4] for i in range(4)])
-    
-    if transpile_circuit:
-        basis_gates = ['u1', 'u2', 'u3', 'cx']
-        transpiled_circ = transpile(Tgs_circ, optimization_level=3, basis_gates=basis_gates)
-        return transpiled_circ.copy()
-    else:
-        return Tgs_circ.copy()
-
-
-def T_ground_state_circuit_2x2_7particles_2(transpile_circuit=True):
-    
-    qr = QuantumRegister(8)
-    Tgs_circ = QuantumCircuit(qr, name='T_gs')
-    
-    
-    Tgs_circ.x([qr[0]]) 
-    Tgs_circ.x([qr[1]])
-    Tgs_circ.x([qr[3]])
-    Tgs_circ.x([qr[4]])
-    Tgs_circ.x([qr[5]])
-    Tgs_circ.x([qr[2]])
-    Tgs_circ.x([qr[7]])
-    Tgs_circ.append(FFFT4d(), [qr[i] for i in range(4)])
-    Tgs_circ.append(FFFT4d(), [qr[i+4] for i in range(4)])
-    
-    if transpile_circuit:
-        basis_gates = ['u1', 'u2', 'u3', 'cx']
-        transpiled_circ = transpile(Tgs_circ, optimization_level=3, basis_gates=basis_gates)
-        return transpiled_circ.copy()
-    else:
-        return Tgs_circ.copy()
-
-def T_ground_state_circuit_2x2_8particles(transpile_circuit=True):
-    
-    qr = QuantumRegister(8)
-    Tgs_circ = QuantumCircuit(qr, name='T_gs')
-    
-    
-    Tgs_circ.x([qr[0]]) 
-    Tgs_circ.x([qr[1]])
-    Tgs_circ.x([qr[2]])
-    Tgs_circ.x([qr[3]])
-    Tgs_circ.x([qr[4]])
-    Tgs_circ.x([qr[5]])
-    Tgs_circ.x([qr[6]])
-    Tgs_circ.x([qr[7]])
-    
-    if transpile_circuit:
-        basis_gates = ['u1', 'u2', 'u3', 'cx']
-        transpiled_circ = transpile(Tgs_circ, optimization_level=3, basis_gates=basis_gates)
-        return transpiled_circ.copy()
-    else:
-        return Tgs_circ.copy()
-
-
-def T_ground_state_circuit_2x2_Nparticles(Nparticules):
-
-    N = int(Nparticules)
-    if N==0:
-        return T_ground_state_circuit_2x2_0particles()
-    elif N==1:
-        return T_ground_state_circuit_2x2_1particles(transpile_circuit=True)
-    elif N==2:
-        return T_ground_state_circuit_2x2_2particles(transpile_circuit=True)
-    elif N==4:
-        return T_ground_state_circuit_spins(8, transpile_circuit=True)
-    elif N==6:
-        return T_ground_state_circuit_2x2_6particles(transpile_circuit=True)
-    elif N==7:
-        return T_ground_state_circuit_2x2_7particles_2(transpile_circuit=True)
-    elif N==8:
-        return T_ground_state_circuit_2x2_8particles(transpile_circuit=True)

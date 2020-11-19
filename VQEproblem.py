@@ -1,12 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import os
-import sys
-sys.path.insert(0, '/Users/alexandre/Documents/Maitrise/Projects/Quantum_Simulation/vqe_hubbard')
-
 from imports import *
-
-
 
 
 class VQEproblem:
@@ -22,13 +16,6 @@ class VQEproblem:
         self._vqe_algorithm_params = self._VQE_params['vqe_algorithm_params']
         self._simulation_params = self._VQE_params['simulation_params']
         self._noise_params = self._VQE_params['noise_params']
-
-        
-        # Generate the Hamiltonian
-        # self.Hamiltonian = qt2qk(self._Hamiltonian_params['H_generator'](**self._Hamiltonian_params))
-
-        # # Solve it classically
-        # self.eigenstates = self.Hamiltonian.eigenstates()
         
         # Hamiltonian in Pauli terms
         if params['Hamiltonian_params']['H_to_Pauli_op']:
@@ -48,7 +35,7 @@ class VQEproblem:
         else:
             self._optimizer_function = self._optimizer_params['optimizer'](**self._optimizer_params['optimizer_arguments'])
         
-        # variational form of the hamiltonian
+        # variational form
         self._var_form = self._var_form_params['variational_form'](num_qubits=self._num_qubits,**self._var_form_params['variational_form_args'])
 
         # backend
@@ -67,8 +54,6 @@ class VQEproblem:
             else:
                 random_parameters = self._random_initial_points(num_instances=1)[0]
                 circuit = self._var_form.construct_circuit(np.array(random_parameters))
-
-        
 
         return circuit
     
@@ -95,8 +80,6 @@ class VQEproblem:
 
 
         self.results_transcript = {
-            # 'gs_energy':      self.eigenstates[0][0],
-            # 'gs_ket':         self.eigenstates[1][0],
             'eval_count':     [],
             'mean_energy':    [],
             # 'std_energy':     [],
@@ -107,8 +90,8 @@ class VQEproblem:
 
         #creates the algorithm to be executed
         vqe_algorithm = VQE(self._qubitH, self._var_form, self._optimizer_function,
-                     initial_point=initial_point,
-                    callback=callback)
+                            initial_point=initial_point,
+                            callback=callback)
             
         # backend
         backend_ = Aer.get_backend(_backend)
@@ -117,8 +100,6 @@ class VQEproblem:
         coupling_map = self._simulation_params['coupling_map']
         if coupling_map:
             backend_.configuration().coupling_map = coupling_map
-            #quantum_instance = QuantumInstance(backend_)
-            #quantum_instance._backend_config['coupling_map']=coupling_map
         
         # Noise model for noisy simulation
         if self._noise_params['turn_on_noise']:
@@ -155,8 +136,6 @@ class VQEproblem:
             self._vqe_algorithm_params['write_to_file'] = True
             if file_name:
                 self._vqe_algorithm_params['file_name']     = file_name
-                #self._vqe_algorithm_params['file_dir']      = file_dir
-            # print results_transcript dict to pickle file
             self._print_to_file(self.results_transcript)
             
        

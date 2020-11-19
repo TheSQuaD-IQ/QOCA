@@ -8,8 +8,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import pickle
 from copy import deepcopy
-import useful_functions as uf
-from useful_functions import *
+import support_functions as sf
 from numpy import pi
 import timeit
 import time
@@ -36,7 +35,6 @@ from qiskit.aqua import *
 from qiskit.aqua.components.variational_forms import VariationalForm
 from qiskit.aqua.components.optimizers import COBYLA, SPSA, ADAM, L_BFGS_B, P_BFGS
 from qiskit.aqua.components.variational_forms import *
-# from qiskit.aqua.components.variational_forms.gates import *
 from qiskit.aqua.components.initial_states import *
 from qiskit.aqua.circuits import FourierTransformCircuits as ftc
 from qiskit.aqua.operators import MatrixOperator
@@ -52,7 +50,7 @@ from qiskit.chemistry.components.initial_states import HartreeFock
 
 
 from myvarforms import *
-
+from VQEproblem import VQEproblem
 
 # Qiskit Chemistry
 
