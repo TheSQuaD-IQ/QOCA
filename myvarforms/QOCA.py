@@ -6,19 +6,18 @@ from qiskit import QuantumRegister, QuantumCircuit
 from qiskit.aqua.components.variational_forms import VariationalForm
 from copy import deepcopy
 
-def expPauli_circuit(theta, Pauli_string):
+def expPauli_circuit(theta, Pauli_string_):
     """
     Return the circuit for exp(- I theta [Pauli_string])
     theta (float): angle of rotation
-    Pauli_string (list or array): ['X','Y','Z', ...] 
+    Pauli_string (string): e.g. 'XXII' 
     """
-
-    Pauli_string = np.array(Pauli_string)
+    Pauli_string = np.array(list(Pauli_string_)) # converts 'XXII' --> np.array(['X', 'X', 'I', 'I'])
     num_qubits = len(Pauli_string)
     nonI_idx = np.where(Pauli_string != 'I')[0] # qubits that don't have the identity operator
 
     qr = QuantumRegister(num_qubits)
-    circ = QuantumCircuit(qr, name='exp(- i {} {})'.format(theta,Pauli_string))
+    circ = QuantumCircuit(qr, name='exp(- i {} {})'.format(theta, Pauli_string_))
 
     # Basis change
     for i in np.where(Pauli_string == 'X')[0]:
@@ -51,7 +50,7 @@ def expPauli_circuit(theta, Pauli_string):
 
 class QOCA(VariationalForm):
     """
-    QOCA
+    QOCA variational form as introduced in https://arxiv.org/abs/2008.01098
     """
 
     CONFIGURATION = {
@@ -89,28 +88,26 @@ class QOCA(VariationalForm):
         Args:
             num_qubits (int) : number of qubits
             depth (int) : number of rotation layers
-            hamiltonian_terms (list of arrays) : list of Pauli Hamiltionian terms grouped w.r.t the 
-                                                 parametrization. e.g. if H = H1 + H2 + H3 where H1 and H2
-                                                 have parameter a and H3 has parameter b, then the input
-                                                 should be of the form [[H1,H2],[H3]].
-                                                 Note that the order Hi's appear in the list will correspond
-                                                 to their order in the circuit.
-                                                 Hi's are given as Pauli strings: Hi = ['X','Y','Z', ...].
+            hamiltonian_terms (list) : list of Pauli Hamiltionian terms grouped w.r.t the 
+                                       parametrization. e.g. if H = H1 + H2 + H3 where H1 and H2
+                                       have parameter a and H3 has parameter b, then the input
+                                       should be of the form [[H1,H2],[H3]].
+                                       Note that the order Hi's appear in the list will correspond
+                                       to their order in the circuit.
+                                       Hi's are given as Pauli strings: Hi = ['X','Y','Z', ...].
             initial_state (InitialState): an initial state object
-            drive_terms (list of arrays) : same as hamiltonian_terms, but for the drive part of the circuit.
+            drive_terms (list) : same as hamiltonian_terms, but for the drive part of the circuit.
         """
         self.validate(locals())
         super().__init__()
 
         self._support_parameterized_circuit = True  # support setting via Terra's Parameter class 
 
-        hamiltonian_terms = np.array(hamiltonian_terms)
-        drive_terms = np.array(drive_terms)
-        circuit_terms = np.concatenate(hamiltonian_terms, drive_terms)
+        self._circuit_terms = hamiltonian_terms + drive_terms
 
         self._num_hamiltonian_params = len(hamiltonian_terms)
         self._num_drive_params       = len(drive_terms)
-        self._num_terms              = len(circuit_terms)
+        self._num_terms              = len(self._circuit_terms)
 
         self._num_parameters_per_depth = self._num_terms
 
@@ -156,11 +153,11 @@ class QOCA(VariationalForm):
             circuit.barrier(q)
 
             # Build circuit term by term
-            for group in enumerate(i, circuit_term):
+            for i, group in enumerate(self._circuit_terms):
                 parameter = params_for_this_block[i]
                 for term in group:
                     # Circuit for the exponential of Pauli terms
-                    circuit.append(expPauli_circuit(parameter, term))
+                    circuit.append(expPauli_circuit(parameter, term),[q[j] for j in range(self._num_qubits)])
 
             param_idx += self._num_parameters_per_depth
 

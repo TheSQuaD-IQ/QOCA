@@ -1,4 +1,4 @@
-#!/usr/bin/env qiskit0.11
+#!/usr/bin/env qiskit0.14.1
 
 import matplotlib.pyplot as plt
 import numpy as np 
@@ -8,15 +8,27 @@ import matplotlib as mpl
 from scipy import sqrt
 from qiskit import *
 from imports import *
-from myvarforms.gates import *
 import math
-import gzip
 
 # Load a pkl file
 def load_obj(file_name):
-    # with gzip.open(file_name, 'rb') as f:
     with open(file_name, 'rb') as f:
         return pickle.load(f)
+
+# simple plot
+def plot(x, ys):
+    fig, ax = plt.subplots()
+    for y in ys:
+        ax.plot(x, y, linestyle='-', alpha=0.5, linewidth=1., marker='o')
+    ax.grid(True)
+    plt.show()
+
+def loglog_plot(x, ys):
+    fig, ax = plt.subplots()
+    for y in ys:
+        ax.loglog(x, y, linestyle='-', alpha=0.5, linewidth=1., marker='o')
+    ax.grid(True)
+    plt.show()
 
 
 ############# QUTIP #############
@@ -64,40 +76,6 @@ def parity_op(Nsite):
     for k in range(Nsite):
         parity_op += compose(sigmad*sigma, k, dims)
     return parity_op
-
-
-def FFFT(Nqubit):
-    id2 = qeye(2)
-    cz = csign()
-    fswap = cz * swap()
-    sigma = sigmap()
-    sigmad = sigma.dag()
-    X = sigmax()
-    Y = sigmay()
-    Z = sigmaz()
-    XX = tensor(X,X)
-    YY = tensor(Y,Y)
-    Zp = tensor(Z,id2)
-    Zq = tensor(id2,Z)
-
-    F0qb = ((-1.j*np.pi/4*Zq).expm()
-            *(-1.j*np.pi/8*XX).expm()
-            *(-1.j*np.pi/8*YY).expm()
-            *(-1.j*np.pi/4*Zq).expm())
-
-    FFFT4qb = (tensor(id2, fswap, id2)
-                *tensor(F0qb,F0qb)
-                *tensor(id2,id2,id2,rotation(Z, np.pi/2))
-                *tensor(id2, fswap, id2)
-                *tensor(F0qb,F0qb)
-                *tensor(id2,fswap,id2))
-
-    N = int(Nqubit)
-
-    if N==2: return F0qb
-    elif N==4: return FFFT4qb
-    else: 
-        raise ValueError('You have not coded the general FFFT you dumbass. You can only use N=2 or N=4')
 
 
 def ket2Norb(ket):
@@ -178,3 +156,23 @@ def circuit2statevector(circuit, convert2Qobj=True):
 
     if convert2Qobj: return  toQobj(state)
     else: return state
+
+
+def Hn_circuit(num_qubits, transpile_circuit=True):
+    """
+    Returns the 
+    """
+    Nsite = int(num_qubits/2.)
+
+    qr = QuantumRegister(num_qubits, name='q')
+    circ = QuantumCircuit(qr)
+    
+    for i in range(num_qubits):
+        circ.h([qr[i]])
+    
+    if transpile_circuit:
+        basis_gates = ['u1', 'u2', 'u3', 'cx']
+        transpiled_circ = transpile(circ, optimization_level=3, basis_gates=basis_gates)
+        return transpiled_circ.copy()
+    else:
+        return circ.copy()
