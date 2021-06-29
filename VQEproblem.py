@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+'''
+ * Author:    Alexandre Choquette
+ * Created:   Nov. 19, 2019
+ * Patent:    PCT/CA2021/050468
+'''
 
 from imports import *
 

@@ -1,3 +1,9 @@
+'''
+ * Author:    Alexandre Choquette
+ * Created:   Nov. 19, 2019
+ * Patent:    PCT/CA2021/050468
+'''
+
 import os
 import sys
 sys.path.insert(0, os.getcwd())

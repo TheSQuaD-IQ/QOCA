@@ -1,4 +1,9 @@
 #!/usr/bin/env qiskit0.14.1
+'''
+ * Author:    Alexandre Choquette
+ * Created:   Nov. 19, 2019
+ * Patent:    PCT/CA2021/050468
+'''
 
 import matplotlib.pyplot as plt
 import numpy as np 
